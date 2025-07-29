@@ -230,14 +230,32 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
         
         # Visualizations
         if show_charts:
+            # Add color explanation
+            st.markdown("""
+            **📊 Color Coding:**
+            - 🟢 **Green**: Eligible trials
+            - 🔴 **Red**: Ineligible trials
+            """)
+            
             col1, col2 = st.columns(2)
             
             with col1:
                 fig1, ax1 = plt.subplots(figsize=(8, 6))
                 eligible_counts = match_df["eligible"].value_counts()
-                colors = ['#ff6b6b', '#51cf66'] if 0 in eligible_counts.index else ['#51cf66']
-                ax1.pie(eligible_counts, labels=eligible_counts.index.map({True: 'Eligible', False: 'Ineligible'}), 
-                       autopct='%1.1f%%', startangle=90, colors=colors)
+                
+                # Better color scheme: Red for ineligible, Green for eligible
+                colors = []
+                labels = []
+                for idx in eligible_counts.index:
+                    if idx == True:  # Eligible
+                        colors.append('#51cf66')  # Green
+                        labels.append('Eligible')
+                    else:  # Ineligible
+                        colors.append('#ff6b6b')  # Red
+                        labels.append('Ineligible')
+                
+                ax1.pie(eligible_counts, labels=labels, autopct='%1.1f%%', 
+                       startangle=90, colors=colors)
                 ax1.set_title("Eligibility Distribution (Structured)")
                 st.pyplot(fig1)
             
@@ -283,14 +301,24 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
             ax3.set_xticks(range(len(sem_df)))
             ax3.set_xticklabels(sem_df["trial_name"], rotation=45, ha='right')
             
-            # Color bars based on similarity
+            # Color bars based on similarity with better color scheme
             for i, bar in enumerate(bars):
-                if sem_df.iloc[i]["similarity"] < 0.3:
-                    bar.set_color('#51cf66')  # Green for good matches
-                elif sem_df.iloc[i]["similarity"] < 0.6:
+                similarity = sem_df.iloc[i]["similarity"]
+                if similarity < 0.3:
+                    bar.set_color('#51cf66')  # Green for excellent matches
+                elif similarity < 0.6:
                     bar.set_color('#ffd43b')  # Yellow for moderate matches
                 else:
                     bar.set_color('#ff6b6b')  # Red for poor matches
+            
+            # Add color legend
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor='#51cf66', label='Excellent (< 0.3)'),
+                Patch(facecolor='#ffd43b', label='Moderate (0.3-0.6)'),
+                Patch(facecolor='#ff6b6b', label='Poor (> 0.6)')
+            ]
+            ax3.legend(handles=legend_elements, loc='upper right')
             
             plt.tight_layout()
             st.pyplot(fig3)
