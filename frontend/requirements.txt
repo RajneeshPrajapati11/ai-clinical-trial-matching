@@ -1,8 +1,10 @@
-streamlit
+streamlit==1.46.1
 requests
 matplotlib
 pandas
 fpdf
+sentence-transformers
+chromadb
 
 
 
