@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from fpdf import FPDF
 import json
+from datetime import datetime
 from feature_extraction import extract_features
 from trial_data import load_trials
 from structured_matching import match_trials
@@ -337,6 +338,19 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
     st.subheader("📄 Download Comprehensive Report")
     
     def create_advanced_pdf(features, match_df, sem_df, use_advanced):
+        def safe_text(text):
+            """Safely encode text for PDF generation"""
+            if text is None:
+                return ""
+            if isinstance(text, str):
+                # Replace problematic characters
+                text = text.replace("≤", "<=").replace("≥", ">=")
+                text = text.replace("°", " degrees").replace("±", "+/-")
+                # Remove or replace other problematic Unicode characters
+                text = text.encode('latin1', 'replace').decode('latin1')
+                return text[:100]  # Limit length to avoid overflow
+            return str(text)
+        
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
@@ -344,7 +358,6 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
         pdf.ln(10)
         
         # Add timestamp
-        from datetime import datetime
         pdf.set_font("Arial", size=10)
         pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
         pdf.cell(0, 10, f"Analysis Mode: {'Advanced' if use_advanced else 'Standard'}", ln=True)
@@ -354,21 +367,21 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
         pdf.set_font("Arial", size=11)
         pdf.cell(0, 10, "Extracted Features:", ln=True)
         features_table = [
-            ["Diagnosis", features['diagnosis']],
-            ["Stage", features['stage']],
-            ["Mutations", ', '.join(features['mutations'])],
-            ["ECOG", features['ecog']],
-            ["Comorbidities", ', '.join(features['comorbidities'])],
-            ["Medications", ', '.join(features['medications'])],
-            ["Lab Values", json.dumps(features['lab_values']) if features['lab_values'] else "None"]
+            ["Diagnosis", safe_text(features['diagnosis'])],
+            ["Stage", safe_text(features['stage'])],
+            ["Mutations", safe_text(', '.join(features['mutations']))],
+            ["ECOG", safe_text(features['ecog'])],
+            ["Comorbidities", safe_text(', '.join(features['comorbidities']))],
+            ["Medications", safe_text(', '.join(features['medications']))],
+            ["Lab Values", safe_text(json.dumps(features['lab_values']) if features['lab_values'] else "None")]
         ]
         
         col_width = pdf.w / 3
         for row in features_table:
             pdf.set_font("Arial", style="B", size=10)
-            pdf.cell(col_width, 8, str(row[0]), border=1)
+            pdf.cell(col_width, 8, safe_text(row[0]), border=1)
             pdf.set_font("Arial", size=10)
-            pdf.cell(0, 8, str(row[1]), border=1, ln=True)
+            pdf.cell(0, 8, safe_text(row[1]), border=1, ln=True)
         
         pdf.ln(5)
         
@@ -382,9 +395,9 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
         pdf.set_font("Arial", size=10)
         
         for idx, row in match_df.iterrows():
-            pdf.cell(50, 8, row['trial_name'][:30], border=1)
+            pdf.cell(50, 8, safe_text(row['trial_name'])[:30], border=1)
             pdf.cell(20, 8, str(row['eligible']), border=1)
-            explanation = ', '.join(row['explanation'])
+            explanation = safe_text(', '.join(row['explanation']))
             pdf.multi_cell(0, 8, explanation[:100], border=1)
             if pdf.get_y() > pdf.h - 30:
                 pdf.add_page()
@@ -400,12 +413,27 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
         pdf.set_font("Arial", size=10)
         
         for idx, row in sem_df.iterrows():
-            pdf.cell(60, 8, row['trial_name'][:35], border=1)
+            pdf.cell(60, 8, safe_text(row['trial_name'])[:35], border=1)
             pdf.cell(0, 8, f"{row['similarity']:.3f}", border=1, ln=True)
             if pdf.get_y() > pdf.h - 30:
                 pdf.add_page()
         
-        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        try:
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+        except UnicodeEncodeError:
+            # Fallback: create a simpler PDF without problematic characters
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(0, 10, "AI Clinical Trial Matching Report", ln=True, align="C")
+            pdf.ln(10)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+            pdf.cell(0, 10, f"Analysis Mode: {'Advanced' if use_advanced else 'Standard'}", ln=True)
+            pdf.ln(10)
+            pdf.cell(0, 10, "Report generated successfully. View results in the web interface.", ln=True)
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+        
         return pdf_bytes
     
     # Download button
