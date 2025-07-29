@@ -446,6 +446,101 @@ if "extracted" in st.session_state and st.session_state["extracted"]:
             if pdf.get_y() > pdf.h - 30:
                 pdf.add_page()
         
+        # Add visualizations
+        try:
+            import tempfile
+            from PIL import Image
+            
+            # Create pie chart for structured matches
+            fig1, ax1 = plt.subplots(figsize=(6, 4))
+            eligible_counts = match_df["eligible"].value_counts()
+            colors = []
+            labels = []
+            for idx in eligible_counts.index:
+                if idx == True:  # Eligible
+                    colors.append('#51cf66')  # Green
+                    labels.append('Eligible')
+                else:  # Ineligible
+                    colors.append('#ff6b6b')  # Red
+                    labels.append('Ineligible')
+            
+            ax1.pie(eligible_counts, labels=labels, autopct='%1.1f%%', 
+                   startangle=90, colors=colors)
+            ax1.set_title("Eligibility Distribution (Structured)")
+            
+            # Save pie chart
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp1:
+                plt.savefig(tmp1.name, bbox_inches='tight', dpi=150)
+                plt.close(fig1)
+                
+                # Add pie chart to PDF
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
+                pdf.cell(0, 10, "Visualizations", ln=True, align="C")
+                pdf.ln(5)
+                pdf.image(tmp1.name, w=pdf.w * 0.8, x=pdf.w * 0.1)
+            
+            # Create bar chart for semantic matches
+            fig2, ax2 = plt.subplots(figsize=(8, 4))
+            bars = ax2.bar(range(len(sem_df)), sem_df["similarity"])
+            ax2.set_ylabel("Similarity Score (lower is better)")
+            ax2.set_title("Semantic Similarity Scores")
+            ax2.set_xticks(range(len(sem_df)))
+            ax2.set_xticklabels(sem_df["trial_name"], rotation=45, ha='right', fontsize=8)
+            
+            # Color bars based on similarity
+            for i, bar in enumerate(bars):
+                similarity = sem_df.iloc[i]["similarity"]
+                if similarity < 0.3:
+                    bar.set_color('#51cf66')  # Green for excellent matches
+                elif similarity < 0.6:
+                    bar.set_color('#ffd43b')  # Yellow for moderate matches
+                else:
+                    bar.set_color('#ff6b6b')  # Red for poor matches
+            
+            # Add color legend
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor='#51cf66', label='Excellent (< 0.3)'),
+                Patch(facecolor='#ffd43b', label='Moderate (0.3-0.6)'),
+                Patch(facecolor='#ff6b6b', label='Poor (> 0.6)')
+            ]
+            ax2.legend(handles=legend_elements, loc='upper right', fontsize=8)
+            
+            plt.tight_layout()
+            
+            # Save bar chart
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
+                plt.savefig(tmp2.name, bbox_inches='tight', dpi=150)
+                plt.close(fig2)
+                
+                # Add bar chart to PDF
+                pdf.ln(10)
+                pdf.image(tmp2.name, w=pdf.w * 0.8, x=pdf.w * 0.1)
+            
+            # Add summary statistics
+            pdf.ln(10)
+            pdf.set_font("Arial", size=11)
+            pdf.cell(0, 10, "Summary Statistics:", ln=True)
+            pdf.set_font("Arial", size=10)
+            
+            eligible_count = match_df["eligible"].sum()
+            total_count = len(match_df)
+            avg_similarity = sem_df["similarity"].mean()
+            best_similarity = sem_df["similarity"].min()
+            
+            pdf.cell(0, 8, f"Total Trials Analyzed: {total_count}", ln=True)
+            pdf.cell(0, 8, f"Eligible Trials: {eligible_count} ({(eligible_count/total_count)*100:.1f}%)", ln=True)
+            pdf.cell(0, 8, f"Average Semantic Similarity: {avg_similarity:.3f}", ln=True)
+            pdf.cell(0, 8, f"Best Semantic Match: {best_similarity:.3f}", ln=True)
+            
+        except Exception as e:
+            # If visualization fails, add a note
+            pdf.add_page()
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 10, "Note: Visualizations could not be generated for this report.", ln=True)
+            pdf.cell(0, 10, "Please view the web interface for interactive charts.", ln=True)
+        
         try:
             pdf_bytes = pdf.output(dest='S').encode('latin1')
         except UnicodeEncodeError:
