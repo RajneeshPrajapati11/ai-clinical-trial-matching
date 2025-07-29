@@ -1,41 +1,71 @@
 from sentence_transformers import SentenceTransformer
-import chromadb
-from chromadb.config import Settings
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 def semantic_match(patient_text, trials, top_n=3):
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    chroma_client = chromadb.Client(Settings(anonymized_telemetry=False))
-    # Use get_or_create_collection to avoid error if collection exists
-    if hasattr(chroma_client, 'get_or_create_collection'):
-        collection = chroma_client.get_or_create_collection(name="trials")
-    else:
-        try:
-            collection = chroma_client.create_collection(name="trials")
-        except Exception:
-            collection = chroma_client.get_collection(name="trials")
-    # Optionally clear previous data to avoid duplicates
     try:
-        collection.delete(where={})
-    except Exception:
-        pass
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        # Encode patient text
+        patient_embedding = model.encode([patient_text])
+        
+        # Encode all trial criteria texts
+        trial_texts = [trial["criteria_text"] for trial in trials]
+        trial_embeddings = model.encode(trial_texts)
+        
+        # Calculate cosine similarities
+        similarities = cosine_similarity(patient_embedding, trial_embeddings)[0]
+        
+        # Get top matches
+        top_indices = np.argsort(similarities)[:top_n]
+        
+        matches = []
+        for idx in top_indices:
+            matches.append({
+                "trial_id": trials[idx]["id"],
+                "trial_name": trials[idx]["name"],
+                "similarity": float(similarities[idx])
+            })
+        
+        return matches
+    
+    except Exception as e:
+        # Fallback: return simple text-based matches if embedding fails
+        print(f"Semantic matching failed, using fallback: {str(e)}")
+        return fallback_semantic_match(patient_text, trials, top_n)
+
+def fallback_semantic_match(patient_text, trials, top_n=3):
+    """Fallback method using simple keyword matching"""
+    patient_lower = patient_text.lower()
+    
+    # Simple keyword scoring
+    scores = []
     for trial in trials:
-        embedding = model.encode(trial["criteria_text"]).tolist()
-        collection.add(
-            documents=[trial["criteria_text"]],
-            embeddings=[embedding],
-            ids=[trial["id"]],
-            metadatas=[{"name": trial["name"]}]
-        )
-    patient_embedding = model.encode(patient_text).tolist()
-    results = collection.query(
-        query_embeddings=[patient_embedding],
-        n_results=top_n
-    )
+        score = 0
+        trial_text = trial["criteria_text"].lower()
+        
+        # Check for common medical terms
+        medical_terms = ["cancer", "tumor", "mutation", "stage", "ecog", "diagnosis"]
+        for term in medical_terms:
+            if term in patient_lower and term in trial_text:
+                score += 1
+        
+        # Check for specific conditions
+        conditions = ["lung", "lymphoma", "pancreatic", "breast", "colon"]
+        for condition in conditions:
+            if condition in patient_lower and condition in trial_text:
+                score += 2
+        
+        scores.append((score, trial))
+    
+    # Sort by score and return top matches
+    scores.sort(reverse=True)
     matches = []
-    for i, trial_id in enumerate(results["ids"][0]):
+    for i, (score, trial) in enumerate(scores[:top_n]):
         matches.append({
-            "trial_id": trial_id,
-            "trial_name": results["metadatas"][0][i]["name"],
-            "similarity": results["distances"][0][i]
+            "trial_id": trial["id"],
+            "trial_name": trial["name"],
+            "similarity": 1.0 - (i * 0.1)  # Simple similarity score
         })
+    
     return matches 

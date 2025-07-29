@@ -4,7 +4,8 @@ matplotlib
 pandas
 fpdf
 sentence-transformers
-chromadb
+scikit-learn
+numpy
 
 
 
