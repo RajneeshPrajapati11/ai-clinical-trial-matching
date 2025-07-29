@@ -6,6 +6,7 @@ fpdf
 sentence-transformers
 scikit-learn
 numpy
+chromadb
 
 
 

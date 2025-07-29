@@ -6,191 +6,422 @@ import json
 from feature_extraction import extract_features
 from trial_data import load_trials
 from structured_matching import match_trials
-from semantic_matching import semantic_match
+from semantic_matching_advanced import semantic_match_advanced, semantic_match
 
-st.title("AI in Clinical Trial Matching")
-st.write("Paste or upload a patient report to find matching clinical trials.")
+# Page configuration
+st.set_page_config(
+    page_title="AI Clinical Trial Matching System",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-report_text = st.text_area("Paste patient report here:", height=200)
-uploaded_file = st.file_uploader("Or upload a .txt file", type=["txt"])
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .feature-box {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 1rem 0;
+    }
+    .success-box {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
+    .info-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-if uploaded_file is not None:
-    report_text = uploaded_file.read().decode("utf-8")
-    st.text_area("Report content:", report_text, height=200, key="uploaded")
+# Main header
+st.markdown('<h1 class="main-header">🏥 AI Clinical Trial Matching System</h1>', unsafe_allow_html=True)
+st.markdown("### Advanced AI-powered clinical trial matching with dual analysis approach")
 
-# --- Extraction and Matching ---
-if st.button("Extract Features and Match Trials") and report_text.strip():
-    features = extract_features(report_text)
-    trials = load_trials()
-    matches = match_trials(features, trials)
-    match_df = pd.DataFrame(matches)
-    sem_matches = semantic_match(report_text, trials)
-    sem_df = pd.DataFrame(sem_matches)
-    # Store in session state
-    st.session_state["features"] = features
-    st.session_state["match_df"] = match_df
-    st.session_state["sem_df"] = sem_df
-    st.session_state["extracted"] = True
-else:
-    # Only show extracted if session state is set
-    if "extracted" in st.session_state and st.session_state["extracted"]:
-        features = st.session_state["features"]
-        match_df = st.session_state["match_df"]
-        sem_df = st.session_state["sem_df"]
+# Sidebar for advanced options
+with st.sidebar:
+    st.header("⚙️ Advanced Settings")
+    
+    # Semantic matching options
+    st.subheader("🔍 Semantic Matching")
+    use_advanced_semantic = st.checkbox("Use Advanced Semantic Matching", value=True, 
+                                       help="Enable ChromaDB-based semantic matching with rich metadata")
+    
+    if use_advanced_semantic:
+        st.info("Advanced mode: Uses ChromaDB for enhanced semantic search with metadata")
     else:
-        features = None
-        match_df = None
-        sem_df = None
+        st.info("Standard mode: Uses scikit-learn for reliable deployment")
+    
+    # Matching parameters
+    st.subheader("📊 Matching Parameters")
+    top_n_matches = st.slider("Number of Top Matches", min_value=1, max_value=10, value=5)
+    
+    # Feature extraction options
+    st.subheader("🔧 Feature Extraction")
+    show_extraction_details = st.checkbox("Show Extraction Details", value=False)
+    
+    # Visualization options
+    st.subheader("📈 Visualizations")
+    show_charts = st.checkbox("Show Charts", value=True)
+    
+    # About section
+    st.markdown("---")
+    st.markdown("### 📋 About")
+    st.markdown("""
+    **Features:**
+    - 🤖 AI-powered semantic matching
+    - 📋 Structured eligibility matching
+    - 📊 Interactive visualizations
+    - 📄 PDF report generation
+    - 🔄 Real-time processing
+    """)
 
-# --- Display Results ---
-if features is not None and match_df is not None and sem_df is not None:
-    st.subheader("Extracted Features")
-    st.write("**Diagnosis:**", features["diagnosis"])
-    st.write("**Stage:**", features["stage"])
-    st.write("**Mutations:**", ", ".join(features["mutations"]) if features["mutations"] else "None")
-    st.write("**ECOG:**", features["ecog"] if features["ecog"] != -1 else "Not found")
-    st.write("**Comorbidities:**", ", ".join(features["comorbidities"]) if features["comorbidities"] else "None")
-    st.write("**Medications:**", ", ".join(features["medications"]) if features["medications"] else "None")
-    if features["lab_values"]:
-        st.write("**Lab Values:**")
-        st.table(pd.DataFrame(list(features["lab_values"].items()), columns=["Lab", "Value"]))
+# Main content area
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.subheader("📝 Patient Report Input")
+    
+    # Input method selection
+    input_method = st.radio(
+        "Choose input method:",
+        ["📝 Paste Text", "📁 Upload File"],
+        horizontal=True
+    )
+    
+    report_text = ""
+    
+    if input_method == "📝 Paste Text":
+        report_text = st.text_area(
+            "Paste patient medical report here:",
+            height=200,
+            placeholder="Enter patient medical report with diagnosis, stage, mutations, ECOG score, comorbidities, medications, and lab values..."
+        )
     else:
-        st.write("**Lab Values:** None")
+        uploaded_file = st.file_uploader("Upload a .txt file", type=["txt"])
+        if uploaded_file is not None:
+            report_text = uploaded_file.read().decode("utf-8")
+            st.text_area("Report content:", report_text, height=200, key="uploaded")
 
-    # --- Explainability Dashboard ---
-    st.subheader(":mag: Explainability Dashboard")
-    st.write("Below you can see for each trial the specific reason(s) for eligibility or exclusion.")
-    explain_data = []
-    for idx, row in match_df.iterrows():
-        trial = row['trial_name']
-        eligible = row['eligible']
-        explanation = row['explanation']
-        if isinstance(explanation, list):
-            explanation_str = "; ".join(str(e) for e in explanation)
+with col2:
+    st.subheader("📋 Sample Report")
+    st.markdown("""
+    **Example format:**
+    ```
+    Patient: John Doe, Age 65
+    Diagnosis: Non-small cell lung cancer, Stage IIIB
+    ECOG: 1
+    Mutations: EGFR positive
+    Comorbidities: Hypertension
+    Medications: Metformin, Aspirin
+    Lab Values: ALT 45, AST 38, Creatinine 1.2
+    ```
+    """)
+
+# Processing section
+if st.button("🚀 Extract Features and Match Trials", type="primary") and report_text.strip():
+    with st.spinner("Processing patient report..."):
+        try:
+            # Extract features
+            features = extract_features(report_text)
+            trials = load_trials()
+            
+            # Structured matching
+            matches = match_trials(features, trials)
+            match_df = pd.DataFrame(matches)
+            
+            # Semantic matching (advanced or standard)
+            if use_advanced_semantic:
+                sem_matches = semantic_match_advanced(report_text, trials, top_n_matches)
+            else:
+                sem_matches = semantic_match(report_text, trials, top_n_matches)
+            sem_df = pd.DataFrame(sem_matches)
+            
+            # Store in session state
+            st.session_state["features"] = features
+            st.session_state["match_df"] = match_df
+            st.session_state["sem_df"] = sem_df
+            st.session_state["extracted"] = True
+            st.session_state["use_advanced"] = use_advanced_semantic
+            
+            st.success("✅ Analysis completed successfully!")
+            
+        except Exception as e:
+            st.error(f"❌ Error during processing: {str(e)}")
+            st.info("💡 Try using the standard semantic matching mode if advanced mode fails.")
+
+# Display results
+if "extracted" in st.session_state and st.session_state["extracted"]:
+    features = st.session_state["features"]
+    match_df = st.session_state["match_df"]
+    sem_df = st.session_state["sem_df"]
+    use_advanced = st.session_state.get("use_advanced", False)
+    
+    # Results tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Extracted Features", "📋 Structured Matches", "🤖 Semantic Matches", "📊 Analytics"])
+    
+    with tab1:
+        st.subheader("🔍 Extracted Medical Features")
+        
+        # Feature display with better formatting
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown('<div class="feature-box">', unsafe_allow_html=True)
+            st.write("**🏥 Diagnosis:**", features["diagnosis"] if features["diagnosis"] else "Not found")
+            st.write("**📊 Stage:**", features["stage"] if features["stage"] else "Not found")
+            st.write("**🧬 Mutations:**", ", ".join(features["mutations"]) if features["mutations"] else "None")
+            st.write("**📈 ECOG Score:**", features["ecog"] if features["ecog"] != -1 else "Not found")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="feature-box">', unsafe_allow_html=True)
+            st.write("**💊 Comorbidities:**", ", ".join(features["comorbidities"]) if features["comorbidities"] else "None")
+            st.write("**💉 Medications:**", ", ".join(features["medications"]) if features["medications"] else "None")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Lab values table
+        if features["lab_values"]:
+            st.subheader("🔬 Laboratory Values")
+            lab_df = pd.DataFrame(list(features["lab_values"].items()), columns=["Test", "Value"])
+            st.dataframe(lab_df, use_container_width=True)
         else:
-            explanation_str = str(explanation)
-        explain_data.append({
-            "Trial Name": trial,
-            "Eligible": eligible,
-            "Reason(s)": explanation_str
-        })
-    explain_df = pd.DataFrame(explain_data)
-    st.dataframe(explain_df, use_container_width=True)
-
-
-    st.subheader("Top Semantic Matches")
-    st.dataframe(sem_df[["trial_name", "similarity"]])
-    fig2, ax2 = plt.subplots()
-    ax2.bar(sem_df["trial_name"], sem_df["similarity"])
-    ax2.set_ylabel("Cosine Similarity (lower is better)")
-    ax2.set_title("Top Semantic Matches")
-    plt.xticks(rotation=45, ha='right')
-    st.pyplot(fig2)
-
-    def create_pdf(features, match_df, sem_df):
-        import tempfile
-        def safe(s):
-            if isinstance(s, str):
-                return s.replace("≤", "<=").replace("≥", ">=")
-            if isinstance(s, list):
-                return [safe(x) for x in s]
-            return s
+            st.info("No laboratory values found in the report.")
+        
+        # Extraction details (if enabled)
+        if show_extraction_details:
+            with st.expander("🔧 Extraction Details"):
+                st.json(features)
+    
+    with tab2:
+        st.subheader("📋 Structured Eligibility Matches")
+        
+        # Summary statistics
+        eligible_count = match_df["eligible"].sum()
+        total_count = len(match_df)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Trials", total_count)
+        with col2:
+            st.metric("Eligible Trials", eligible_count)
+        with col3:
+            st.metric("Eligibility Rate", f"{(eligible_count/total_count)*100:.1f}%")
+        
+        # Results table
+        st.dataframe(
+            match_df[["trial_name", "eligible", "explanation"]],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Visualizations
+        if show_charts:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig1, ax1 = plt.subplots(figsize=(8, 6))
+                eligible_counts = match_df["eligible"].value_counts()
+                colors = ['#ff6b6b', '#51cf66'] if 0 in eligible_counts.index else ['#51cf66']
+                ax1.pie(eligible_counts, labels=eligible_counts.index.map({True: 'Eligible', False: 'Ineligible'}), 
+                       autopct='%1.1f%%', startangle=90, colors=colors)
+                ax1.set_title("Eligibility Distribution (Structured)")
+                st.pyplot(fig1)
+            
+            with col2:
+                fig2, ax2 = plt.subplots(figsize=(8, 6))
+                top_eligible = match_df[match_df["eligible"] == True].head(10)
+                if not top_eligible.empty:
+                    ax2.barh(range(len(top_eligible)), [1]*len(top_eligible))
+                    ax2.set_yticks(range(len(top_eligible)))
+                    ax2.set_yticklabels(top_eligible["trial_name"], fontsize=8)
+                    ax2.set_title("Top Eligible Trials")
+                    ax2.set_xlabel("Eligibility")
+                    st.pyplot(fig2)
+    
+    with tab3:
+        st.subheader("🤖 Semantic Similarity Matches")
+        
+        if use_advanced:
+            st.info("🔬 Using Advanced Semantic Matching with ChromaDB")
+        else:
+            st.info("📊 Using Standard Semantic Matching with scikit-learn")
+        
+        # Similarity scores explanation
+        st.markdown("""
+        **Similarity Scores:**
+        - **Lower values** = Better matches (more similar)
+        - **Higher values** = Less similar matches
+        """)
+        
+        # Results table
+        st.dataframe(
+            sem_df[["trial_name", "similarity"]],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Visualizations
+        if show_charts:
+            fig3, ax3 = plt.subplots(figsize=(10, 6))
+            bars = ax3.bar(range(len(sem_df)), sem_df["similarity"])
+            ax3.set_ylabel("Similarity Score (lower is better)")
+            ax3.set_title("Semantic Similarity Scores")
+            ax3.set_xticks(range(len(sem_df)))
+            ax3.set_xticklabels(sem_df["trial_name"], rotation=45, ha='right')
+            
+            # Color bars based on similarity
+            for i, bar in enumerate(bars):
+                if sem_df.iloc[i]["similarity"] < 0.3:
+                    bar.set_color('#51cf66')  # Green for good matches
+                elif sem_df.iloc[i]["similarity"] < 0.6:
+                    bar.set_color('#ffd43b')  # Yellow for moderate matches
+                else:
+                    bar.set_color('#ff6b6b')  # Red for poor matches
+            
+            plt.tight_layout()
+            st.pyplot(fig3)
+    
+    with tab4:
+        st.subheader("📊 Comprehensive Analytics")
+        
+        # Comparison of both approaches
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📋 Structured vs Semantic")
+            
+            # Find overlap between approaches
+            structured_eligible = set(match_df[match_df["eligible"]]["trial_name"])
+            semantic_top = set(sem_df["trial_name"])
+            overlap = structured_eligible.intersection(semantic_top)
+            
+            st.metric("Structured Eligible", len(structured_eligible))
+            st.metric("Semantic Top Matches", len(semantic_top))
+            st.metric("Overlap", len(overlap))
+            
+            if overlap:
+                st.success(f"✅ {len(overlap)} trials appear in both approaches!")
+        
+        with col2:
+            st.subheader("🎯 Match Quality")
+            
+            # Quality metrics
+            avg_similarity = sem_df["similarity"].mean()
+            best_similarity = sem_df["similarity"].min()
+            
+            st.metric("Average Similarity", f"{avg_similarity:.3f}")
+            st.metric("Best Similarity", f"{best_similarity:.3f}")
+            
+            if best_similarity < 0.3:
+                st.success("🎉 Excellent semantic matches found!")
+            elif best_similarity < 0.6:
+                st.warning("⚠️ Moderate semantic matches")
+            else:
+                st.error("❌ Poor semantic matches - consider different input")
+    
+    # PDF Download Section
+    st.markdown("---")
+    st.subheader("📄 Download Comprehensive Report")
+    
+    def create_advanced_pdf(features, match_df, sem_df, use_advanced):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.cell(0, 10, "AI in Clinical Trial Matching Results", ln=True, align="C")
+        pdf.cell(0, 10, "AI Clinical Trial Matching System - Advanced Report", ln=True, align="C")
         pdf.ln(10)
+        
+        # Add timestamp
+        from datetime import datetime
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+        pdf.cell(0, 10, f"Analysis Mode: {'Advanced' if use_advanced else 'Standard'}", ln=True)
+        pdf.ln(10)
+        
+        # Features section
         pdf.set_font("Arial", size=11)
         pdf.cell(0, 10, "Extracted Features:", ln=True)
-        # Table for features
         features_table = [
-            ["Diagnosis", safe(features['diagnosis'])],
-            ["Stage", safe(features['stage'])],
-            ["Mutations", ', '.join(safe(features['mutations']))],
-            ["ECOG", safe(features['ecog'])],
-            ["Comorbidities", ', '.join(safe(features['comorbidities']))],
-            ["Medications", ', '.join(safe(features['medications']))],
-            ["Lab Values", json.dumps(safe(features['lab_values'])) if features['lab_values'] else "None"]
+            ["Diagnosis", features['diagnosis']],
+            ["Stage", features['stage']],
+            ["Mutations", ', '.join(features['mutations'])],
+            ["ECOG", features['ecog']],
+            ["Comorbidities", ', '.join(features['comorbidities'])],
+            ["Medications", ', '.join(features['medications'])],
+            ["Lab Values", json.dumps(features['lab_values']) if features['lab_values'] else "None"]
         ]
+        
         col_width = pdf.w / 3
         for row in features_table:
-            pdf.set_font("Arial", style="B", size=11)
+            pdf.set_font("Arial", style="B", size=10)
             pdf.cell(col_width, 8, str(row[0]), border=1)
-            pdf.set_font("Arial", size=11)
+            pdf.set_font("Arial", size=10)
             pdf.cell(0, 8, str(row[1]), border=1, ln=True)
+        
         pdf.ln(5)
-        # Structured Trial Matches Table
-        pdf.set_font("Arial", size=12)
+        
+        # Structured matches
+        pdf.set_font("Arial", size=11)
         pdf.cell(0, 10, "Structured Trial Matches:", ln=True)
         pdf.set_font("Arial", style="B", size=10)
         pdf.cell(50, 8, "Trial Name", border=1)
         pdf.cell(20, 8, "Eligible", border=1)
         pdf.cell(0, 8, "Explanation", border=1, ln=True)
         pdf.set_font("Arial", size=10)
+        
         for idx, row in match_df.iterrows():
-            y_before = pdf.get_y()
-            x = pdf.get_x()
-            pdf.cell(50, 8, safe(row['trial_name'])[:30], border=1)
+            pdf.cell(50, 8, row['trial_name'][:30], border=1)
             pdf.cell(20, 8, str(row['eligible']), border=1)
-            x_expl = pdf.get_x()
-            y_expl = pdf.get_y()
-            explanation = ', '.join(safe(row['explanation']))
-            explanation_height = pdf.get_string_width(explanation) / (pdf.w - x_expl - 10) * 8 + 8
-            pdf.multi_cell(0, 8, explanation, border=1)
-            pdf.set_xy(x, max(y_before + explanation_height, pdf.get_y()))
+            explanation = ', '.join(row['explanation'])
+            pdf.multi_cell(0, 8, explanation[:100], border=1)
             if pdf.get_y() > pdf.h - 30:
                 pdf.add_page()
+        
         pdf.ln(5)
-        # Top Semantic Matches Table
-        pdf.set_font("Arial", size=12)
-        pdf.cell(0, 10, "Top Semantic Matches:", ln=True)
+        
+        # Semantic matches
+        pdf.set_font("Arial", size=11)
+        pdf.cell(0, 10, "Semantic Matches:", ln=True)
         pdf.set_font("Arial", style="B", size=10)
         pdf.cell(60, 8, "Trial Name", border=1)
         pdf.cell(0, 8, "Similarity", border=1, ln=True)
         pdf.set_font("Arial", size=10)
+        
         for idx, row in sem_df.iterrows():
-            pdf.cell(60, 8, safe(row['trial_name'])[:35], border=1)
+            pdf.cell(60, 8, row['trial_name'][:35], border=1)
             pdf.cell(0, 8, f"{row['similarity']:.3f}", border=1, ln=True)
             if pdf.get_y() > pdf.h - 30:
                 pdf.add_page()
-        pdf.ln(5)
-        # Add charts as images, resizing to avoid MemoryError
-        from PIL import Image
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp1, tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
-            eligible_counts = match_df["eligible"].value_counts()
-            fig1, ax1 = plt.subplots()
-            ax1.pie(eligible_counts, labels=eligible_counts.index.map(str), autopct='%1.1f%%', startangle=90)
-            ax1.set_title("Eligibility Distribution (Structured)")
-            plt.savefig(tmp1.name, bbox_inches='tight')
-            plt.close(fig1)
-            fig2, ax2 = plt.subplots()
-            ax2.bar(sem_df["trial_name"], sem_df["similarity"])
-            ax2.set_ylabel("Cosine Similarity (lower is better)")
-            ax2.set_title("Top Semantic Matches")
-            plt.xticks(rotation=45, ha='right')
-            plt.savefig(tmp2.name, bbox_inches='tight')
-            plt.close(fig2)
-            # Resize images to max width/height (e.g., 800x600)
-            for tmp_img in [tmp1.name, tmp2.name]:
-                with Image.open(tmp_img) as im:
-                    im = im.convert('RGB')
-                    im.thumbnail((800, 600), Image.LANCZOS)
-                    im.save(tmp_img, format='PNG')
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.cell(0, 10, "Visualizations", ln=True)
-            pdf.image(tmp1.name, w=pdf.w * 0.8)
-            pdf.ln(5)
-            pdf.image(tmp2.name, w=pdf.w * 0.8)
+        
         pdf_bytes = pdf.output(dest='S').encode('latin1')
         return pdf_bytes
+    
+    # Download button
+    pdf_bytes = create_advanced_pdf(features, match_df, sem_df, use_advanced)
+    st.download_button(
+        label="📥 Download Advanced PDF Report",
+        data=pdf_bytes,
+        file_name=f"clinical_trial_matching_advanced_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        mime="application/pdf"
+    )
 
-    # Always show the download button when results are available
-    if features is not None and match_df is not None and sem_df is not None:
-        pdf_bytes = create_pdf(features, match_df, sem_df)
-        st.download_button(
-            label="Download PDF",
-            data=pdf_bytes,
-            file_name="clinical_trial_matching_results.pdf",
-            mime="application/pdf"
-        )
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666;'>
+    <p>🏥 AI Clinical Trial Matching System | Advanced Edition</p>
+    <p>Powered by Streamlit, Sentence Transformers, and Advanced NLP</p>
+</div>
+""", unsafe_allow_html=True)
